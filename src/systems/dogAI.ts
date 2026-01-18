@@ -12,15 +12,17 @@ import type { World } from "../types.ts";
 // Config
 const PICKUP_DISTANCE = 30;
 const DELIVERY_DISTANCE = 40;
+const WAIT_DISTANCE = 120; // How far dog backs off
+const WAIT_THRESHOLD = 10; // Close enough to wait position
 
-// Helper to move entity toward target
+// Helper to move entity toward target, returns distance to target
 function moveToward(
   eid: number,
   targetX: number,
   targetY: number,
   speed: number,
   dt: number
-): void {
+): number {
   const x = Position.x[eid]!;
   const y = Position.y[eid]!;
 
@@ -45,6 +47,44 @@ function moveToward(
       Position.y[eid] = y + moveY;
     }
   }
+
+  return dist;
+}
+
+// Calculate a position away from the player for the dog to wait
+function calculateWaitPosition(
+  playerX: number,
+  playerY: number,
+  dogX: number,
+  dogY: number,
+  width: number = 800,
+  height: number = 600
+): { x: number; y: number } {
+  // Direction from player to dog
+  let dx = dogX - playerX;
+  let dy = dogY - playerY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // If dog is on top of player, pick a random direction
+  if (dist < 1) {
+    const angle = Math.random() * Math.PI * 2;
+    dx = Math.cos(angle);
+    dy = Math.sin(angle);
+  } else {
+    dx /= dist;
+    dy /= dist;
+  }
+
+  // Calculate wait position
+  let waitX = playerX + dx * WAIT_DISTANCE;
+  let waitY = playerY + dy * WAIT_DISTANCE;
+
+  // Clamp to bounds
+  const margin = 30;
+  waitX = Math.max(margin, Math.min(width - margin, waitX));
+  waitY = Math.max(margin, Math.min(height - margin, waitY));
+
+  return { x: waitX, y: waitY };
 }
 
 // Dog AI system - state machine for chasing and returning ball
@@ -104,9 +144,12 @@ export function dogAISystem(world: World, dt: number): void {
           DogAI.state[dogEid] = DogState.ReturningToPlayer;
         }
 
-        // If ball is back with player somehow, go idle
+        // If ball is back with player somehow, back off
         if (ballState === BallState.HeldByPlayer) {
-          DogAI.state[dogEid] = DogState.Idle;
+          const waitPos = calculateWaitPosition(playerX, playerY, dogX, dogY);
+          DogAI.waitX[dogEid] = waitPos.x;
+          DogAI.waitY[dogEid] = waitPos.y;
+          DogAI.state[dogEid] = DogState.BackingOff;
         }
         break;
       }
@@ -128,6 +171,29 @@ export function dogAISystem(world: World, dt: number): void {
           // Deliver ball to player
           Ball.state[ballEid] = BallState.HeldByPlayer;
           Ball.heldBy[ballEid] = playerEid;
+
+          // Calculate wait position and start backing off
+          const waitPos = calculateWaitPosition(playerX, playerY, dogX, dogY);
+          DogAI.waitX[dogEid] = waitPos.x;
+          DogAI.waitY[dogEid] = waitPos.y;
+          DogAI.state[dogEid] = DogState.BackingOff;
+        }
+        break;
+      }
+
+      case DogState.BackingOff: {
+        const waitX = DogAI.waitX[dogEid]!;
+        const waitY = DogAI.waitY[dogEid]!;
+
+        // Move toward wait position
+        const distToWait = moveToward(dogEid, waitX, waitY, speed * 0.7, dt);
+
+        // If ball is thrown while backing off, chase it
+        if (ballState === BallState.InFlight || ballState === BallState.OnGround) {
+          DogAI.state[dogEid] = DogState.ChasingBall;
+        }
+        // Once at wait position, go idle
+        else if (distToWait < WAIT_THRESHOLD) {
           DogAI.state[dogEid] = DogState.Idle;
         }
         break;

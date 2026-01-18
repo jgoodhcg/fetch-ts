@@ -28,17 +28,21 @@ export const Player = soa({
 
 // Dog AI component
 export const DogAI = soa({
-  // 0 = Idle, 1 = Chasing Ball, 2 = Returning to Player
+  // 0 = Idle, 1 = Chasing Ball, 2 = Returning to Player, 3 = Backing Off
   state: new Uint8Array(MAX_ENTITIES),
   speed: new Float32Array(MAX_ENTITIES),
   // Is the dog excited (player charging throw)?
   excited: new Uint8Array(MAX_ENTITIES),
+  // Target position for backing off
+  waitX: new Float32Array(MAX_ENTITIES),
+  waitY: new Float32Array(MAX_ENTITIES),
 });
 
 export const DogState = {
   Idle: 0,
   ChasingBall: 1,
   ReturningToPlayer: 2,
+  BackingOff: 3,
 } as const;
 
 // Ball component

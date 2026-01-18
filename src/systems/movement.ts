@@ -1,35 +1,51 @@
 import { query } from "bitecs";
-import { Position, Velocity } from "../components.ts";
+import { Position, Velocity, Player } from "../components.ts";
+import { isMovingUp, isMovingDown, isMovingLeft, isMovingRight } from "./input.ts";
 import type { World } from "../types.ts";
 
-// Pure simulation system - no rendering concerns
-export function movementSystem(world: World): void {
+// Player movement system - reads input and moves player
+export function playerMovementSystem(world: World, dt: number): void {
+  const entities = query(world, [Position, Player]);
+
+  for (const eid of entities) {
+    const speed = Player.speed[eid]!;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (isMovingUp()) dy -= 1;
+    if (isMovingDown()) dy += 1;
+    if (isMovingLeft()) dx -= 1;
+    if (isMovingRight()) dx += 1;
+
+    // Normalize diagonal movement
+    if (dx !== 0 && dy !== 0) {
+      const len = Math.sqrt(dx * dx + dy * dy);
+      dx /= len;
+      dy /= len;
+    }
+
+    Position.x[eid] = Position.x[eid]! + dx * speed * dt;
+    Position.y[eid] = Position.y[eid]! + dy * speed * dt;
+  }
+}
+
+// Generic velocity movement system
+export function velocitySystem(world: World, dt: number): void {
   const entities = query(world, [Position, Velocity]);
 
   for (const eid of entities) {
-    Position.x[eid] = Position.x[eid]! + Velocity.x[eid]!;
-    Position.y[eid] = Position.y[eid]! + Velocity.y[eid]!;
+    Position.x[eid] = Position.x[eid]! + Velocity.x[eid]! * dt;
+    Position.y[eid] = Position.y[eid]! + Velocity.y[eid]! * dt;
   }
 }
 
-// Boundary system - keeps entities within bounds
-export function boundsSystem(world: World, width: number, height: number): void {
-  const entities = query(world, [Position, Velocity, Sprite]);
+// Clamp entities to bounds
+export function boundsSystem(world: World, width: number, height: number, margin: number = 20): void {
+  const entities = query(world, [Position]);
 
   for (const eid of entities) {
-    const radius = Sprite.radius[eid]!;
-
-    if (Position.x[eid]! <= radius || Position.x[eid]! >= width - radius) {
-      Velocity.x[eid] = Velocity.x[eid]! * -1;
-      Position.x[eid] = Math.max(radius, Math.min(width - radius, Position.x[eid]!));
-    }
-
-    if (Position.y[eid]! <= radius || Position.y[eid]! >= height - radius) {
-      Velocity.y[eid] = Velocity.y[eid]! * -1;
-      Position.y[eid] = Math.max(radius, Math.min(height - radius, Position.y[eid]!));
-    }
+    Position.x[eid] = Math.max(margin, Math.min(width - margin, Position.x[eid]!));
+    Position.y[eid] = Math.max(margin, Math.min(height - margin, Position.y[eid]!));
   }
 }
-
-// Import Sprite for bounds checking
-import { Sprite } from "../components.ts";

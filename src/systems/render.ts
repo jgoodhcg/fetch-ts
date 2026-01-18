@@ -1,94 +1,245 @@
 import { query } from "bitecs";
 import { Graphics, Container } from "pixi.js";
-import { Position, Sprite } from "../components.ts";
+import {
+  Position,
+  Sprite,
+  Player,
+  DogAI,
+  Ball,
+  BallState,
+} from "../components.ts";
+import { getChargeState } from "./throw.ts";
 import type { World } from "../types.ts";
 
-// Graphics pool - reuse objects instead of creating/destroying
-class GraphicsPool {
-  private pool: Graphics[] = [];
-  private active: number = 0;
-  private container: Container;
-
-  constructor(container: Container) {
-    this.container = container;
-  }
-
-  // Get a graphics object from pool or create new one
-  acquire(): Graphics {
-    if (this.active < this.pool.length) {
-      const g = this.pool[this.active]!;
-      g.visible = true;
-      this.active++;
-      return g;
-    }
-
-    const g = new Graphics();
-    this.pool.push(g);
-    this.container.addChild(g);
-    this.active++;
-    return g;
-  }
-
-  // Reset pool for next frame - hide unused graphics
-  reset(): void {
-    for (let i = this.active; i < this.pool.length; i++) {
-      this.pool[i]!.visible = false;
-    }
-    this.active = 0;
-  }
-
-  get size(): number {
-    return this.pool.length;
-  }
-
-  get activeCount(): number {
-    return this.active;
-  }
+// Render context - holds Pixi objects
+interface RenderContext {
+  container: Container;
+  playerGraphics: Graphics;
+  dogGraphics: Graphics;
+  ballGraphics: Graphics;
+  aimIndicator: Graphics;
 }
 
-// Render system state - lives outside the pure function
-// In a larger game, this would be managed by a RenderContext
-let pool: GraphicsPool | null = null;
+let ctx: RenderContext | null = null;
 
 export function initRenderSystem(container: Container): void {
-  pool = new GraphicsPool(container);
+  const playerGraphics = new Graphics();
+  const dogGraphics = new Graphics();
+  const ballGraphics = new Graphics();
+  const aimIndicator = new Graphics();
+
+  container.addChild(aimIndicator); // Behind everything
+  container.addChild(playerGraphics);
+  container.addChild(dogGraphics);
+  container.addChild(ballGraphics);
+
+  ctx = {
+    container,
+    playerGraphics,
+    dogGraphics,
+    ballGraphics,
+    aimIndicator,
+  };
 }
 
-// Pure-ish render system - queries ECS, syncs to Pixi
-// This is the bridge between simulation (ECS) and presentation (Pixi)
+// Main render system
 export function renderSystem(world: World): void {
-  if (!pool) {
-    throw new Error("Render system not initialized. Call initRenderSystem first.");
+  if (!ctx) {
+    throw new Error("Render system not initialized");
   }
 
-  // Reset pool - all graphics start as available
-  pool.reset();
+  renderPlayer(world);
+  renderDog(world);
+  renderBall(world);
+  renderAimIndicator(world);
+}
 
-  // Query all renderable entities
-  const entities = query(world, [Position, Sprite]);
+function renderPlayer(world: World): void {
+  const players = query(world, [Position, Player, Sprite]);
+  const g = ctx!.playerGraphics;
 
-  for (const eid of entities) {
-    const g = pool.acquire();
+  g.clear();
 
+  for (const eid of players) {
     const x = Position.x[eid]!;
     const y = Position.y[eid]!;
     const color = Sprite.color[eid]!;
     const radius = Sprite.radius[eid]!;
 
-    // Clear and redraw
-    // Note: For better perf at scale, we'd cache and only redraw on change
-    g.clear();
-    g.circle(0, 0, radius);
+    // Draw player as a circle with a direction indicator
+    g.circle(x, y, radius);
     g.fill(color);
-    g.x = x;
-    g.y = y;
+
+    // Inner highlight
+    g.circle(x - radius * 0.2, y - radius * 0.2, radius * 0.3);
+    g.fill(0xffffff, 0.3);
   }
 }
 
-// Debug info
+function renderDog(world: World): void {
+  const dogs = query(world, [Position, DogAI, Sprite]);
+  const g = ctx!.dogGraphics;
+
+  g.clear();
+
+  for (const eid of dogs) {
+    const x = Position.x[eid]!;
+    const y = Position.y[eid]!;
+    const color = Sprite.color[eid]!;
+    const radius = Sprite.radius[eid]!;
+    const excited = DogAI.excited[eid]!;
+
+    // Base dog shape
+    g.circle(x, y, radius);
+    g.fill(color);
+
+    // Ears
+    g.circle(x - radius * 0.7, y - radius * 0.7, radius * 0.4);
+    g.fill(color);
+    g.circle(x + radius * 0.7, y - radius * 0.7, radius * 0.4);
+    g.fill(color);
+
+    // Snout
+    g.ellipse(x, y + radius * 0.3, radius * 0.4, radius * 0.3);
+    g.fill(0xd4a574);
+
+    // Nose
+    g.circle(x, y + radius * 0.4, radius * 0.15);
+    g.fill(0x333333);
+
+    // Eyes
+    g.circle(x - radius * 0.3, y - radius * 0.1, radius * 0.15);
+    g.fill(0x333333);
+    g.circle(x + radius * 0.3, y - radius * 0.1, radius * 0.15);
+    g.fill(0x333333);
+
+    // Excitement indicator (wagging effect via scale)
+    if (excited) {
+      const wobble = Math.sin(Date.now() * 0.02) * 3;
+      // Draw excitement lines
+      g.moveTo(x - radius - 8, y + wobble);
+      g.lineTo(x - radius - 15, y + wobble - 5);
+      g.stroke({ width: 2, color: 0xffcc00 });
+      g.moveTo(x + radius + 8, y - wobble);
+      g.lineTo(x + radius + 15, y - wobble - 5);
+      g.stroke({ width: 2, color: 0xffcc00 });
+    }
+  }
+}
+
+function renderBall(world: World): void {
+  const balls = query(world, [Position, Ball, Sprite]);
+  const g = ctx!.ballGraphics;
+
+  g.clear();
+
+  for (const eid of balls) {
+    const x = Position.x[eid]!;
+    const y = Position.y[eid]!;
+    const color = Sprite.color[eid]!;
+    const radius = Sprite.radius[eid]!;
+    const state = Ball.state[eid]!;
+
+    // Ball shadow (when in flight)
+    if (state === BallState.InFlight) {
+      g.circle(x + 3, y + 3, radius);
+      g.fill(0x000000, 0.2);
+    }
+
+    // Ball
+    g.circle(x, y, radius);
+    g.fill(color);
+
+    // Highlight
+    g.circle(x - radius * 0.3, y - radius * 0.3, radius * 0.25);
+    g.fill(0xffffff, 0.4);
+  }
+}
+
+function renderAimIndicator(world: World): void {
+  const g = ctx!.aimIndicator;
+  g.clear();
+
+  const charge = getChargeState(world);
+  if (!charge || !charge.active) return;
+
+  const { power, playerX, playerY, targetX, targetY } = charge;
+
+  // Calculate direction
+  const dx = targetX - playerX;
+  const dy = targetY - playerY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist < 1) return;
+
+  const dirX = dx / dist;
+  const dirY = dy / dist;
+
+  // Line length based on power
+  const minLength = 50;
+  const maxLength = 200;
+  const lineLength = minLength + power * (maxLength - minLength);
+
+  const endX = playerX + dirX * lineLength;
+  const endY = playerY + dirY * lineLength;
+
+  // Color based on power (green -> yellow -> red)
+  let color: number;
+  if (power < 0.5) {
+    color = 0x44ff44; // Green
+  } else if (power < 0.8) {
+    color = 0xffff44; // Yellow
+  } else {
+    color = 0xff4444; // Red
+  }
+
+  // Draw dashed line
+  const dashLength = 10;
+  const gapLength = 5;
+  let currentDist = 0;
+  let drawing = true;
+
+  g.moveTo(playerX + dirX * 30, playerY + dirY * 30); // Start slightly away from player
+
+  while (currentDist < lineLength - 30) {
+    const segmentLength = drawing ? dashLength : gapLength;
+    currentDist += segmentLength;
+
+    const x = playerX + dirX * Math.min(currentDist + 30, lineLength);
+    const y = playerY + dirY * Math.min(currentDist + 30, lineLength);
+
+    if (drawing) {
+      g.lineTo(x, y);
+      g.stroke({ width: 3, color, alpha: 0.7 });
+    }
+    g.moveTo(x, y);
+
+    drawing = !drawing;
+  }
+
+  // Draw target circle
+  g.circle(endX, endY, 8 + power * 8);
+  g.stroke({ width: 2, color, alpha: 0.7 });
+
+  // Power bar
+  const barWidth = 40;
+  const barHeight = 6;
+  const barX = playerX - barWidth / 2;
+  const barY = playerY - 40;
+
+  // Background
+  g.rect(barX, barY, barWidth, barHeight);
+  g.fill(0x333333, 0.7);
+
+  // Fill
+  g.rect(barX, barY, barWidth * power, barHeight);
+  g.fill(color, 0.9);
+
+  // Border
+  g.rect(barX, barY, barWidth, barHeight);
+  g.stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
+}
+
 export function getRenderStats(): { poolSize: number; active: number } {
-  return {
-    poolSize: pool?.size ?? 0,
-    active: pool?.activeCount ?? 0,
-  };
+  return { poolSize: 4, active: 4 }; // Fixed entities for now
 }

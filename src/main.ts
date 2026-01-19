@@ -4,7 +4,6 @@ import {
   Container,
   Graphics,
   Rectangle,
-  SCALE_MODES,
   Sprite as PixiSprite,
   Text,
   Texture,
@@ -124,7 +123,7 @@ async function main() {
 
   const grassSheet = await Assets.load({
     src: TILE_SHEET_PATH,
-    data: { scaleMode: SCALE_MODES.NEAREST },
+    data: { scaleMode: "nearest" },
   }) as Texture;
 
   const tileColumns = Math.max(1, Math.floor(grassSheet.width / TILE_SIZE));
@@ -368,7 +367,7 @@ async function main() {
 
     const debugBackground = new Graphics();
     debugBackground.rect(0, 0, sheetSprite.width, sheetSprite.height);
-    debugBackground.fill(0x000000, 0.35);
+    debugBackground.fill({ color: 0x000000, alpha: 0.35 });
 
     highlight = new Graphics();
 

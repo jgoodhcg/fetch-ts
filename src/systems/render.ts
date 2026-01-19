@@ -72,7 +72,7 @@ function renderPlayer(world: World): void {
 
     // Inner highlight
     g.circle(x - radius * 0.2, y - radius * 0.2, radius * 0.3);
-    g.fill(0xffffff, 0.3);
+    g.fill({ color: 0xffffff, alpha: 0.3 });
   }
 }
 
@@ -143,7 +143,7 @@ function renderBall(world: World): void {
     // Ball shadow (when in flight)
     if (state === BallState.InFlight) {
       g.circle(x + 3, y + 3, radius);
-      g.fill(0x000000, 0.2);
+      g.fill({ color: 0x000000, alpha: 0.2 });
     }
 
     // Ball
@@ -152,7 +152,7 @@ function renderBall(world: World): void {
 
     // Highlight
     g.circle(x - radius * 0.3, y - radius * 0.3, radius * 0.25);
-    g.fill(0xffffff, 0.4);
+    g.fill({ color: 0xffffff, alpha: 0.4 });
   }
 }
 
@@ -229,11 +229,11 @@ function renderAimIndicator(world: World): void {
 
   // Background
   g.rect(barX, barY, barWidth, barHeight);
-  g.fill(0x333333, 0.7);
+  g.fill({ color: 0x333333, alpha: 0.7 });
 
   // Fill
   g.rect(barX, barY, barWidth * power, barHeight);
-  g.fill(color, 0.9);
+  g.fill({ color, alpha: 0.9 });
 
   // Border
   g.rect(barX, barY, barWidth, barHeight);

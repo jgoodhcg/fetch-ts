@@ -2,6 +2,7 @@
 export interface InputState {
   // Keyboard
   keys: Set<string>;
+  keysPressed: Set<string>;
   // Mouse
   mouseX: number;
   mouseY: number;
@@ -12,6 +13,7 @@ export interface InputState {
 
 let inputState: InputState = {
   keys: new Set(),
+  keysPressed: new Set(),
   mouseX: 0,
   mouseY: 0,
   mouseDown: false,
@@ -20,6 +22,7 @@ let inputState: InputState = {
 };
 
 let previousMouseDown = false;
+const previousKeys = new Set<string>();
 
 export function initInput(canvas: HTMLCanvasElement): void {
   // Keyboard events
@@ -55,6 +58,17 @@ export function updateInput(): void {
   inputState.mousePressed = inputState.mouseDown && !previousMouseDown;
   inputState.mouseReleased = !inputState.mouseDown && previousMouseDown;
   previousMouseDown = inputState.mouseDown;
+
+  inputState.keysPressed.clear();
+  for (const key of inputState.keys) {
+    if (!previousKeys.has(key)) {
+      inputState.keysPressed.add(key);
+    }
+  }
+  previousKeys.clear();
+  for (const key of inputState.keys) {
+    previousKeys.add(key);
+  }
 }
 
 export function getInput(): InputState {
@@ -64,6 +78,10 @@ export function getInput(): InputState {
 // Helper functions for common checks
 export function isKeyDown(code: string): boolean {
   return inputState.keys.has(code);
+}
+
+export function isKeyPressed(code: string): boolean {
+  return inputState.keysPressed.has(code);
 }
 
 export function isMovingUp(): boolean {

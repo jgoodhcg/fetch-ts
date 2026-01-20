@@ -42,10 +42,12 @@ const DEBUG_SHEET_MAX_SCALE = 2;
 const DEFAULT_TILE_INDEX = 58;
 const NONE_TILE_INDEX = -1;
 const DOG_SHEET_PATH = "/sprites/dog/WHITE_DOG_STANDING.png";
+const DOG_RUN_SHEET_PATH = "/sprites/dog/WHITE_DOG_RUNNING.png";
 const DOG_FRAME_SIZE = 32;
 const DOG_SCALE = 3;
-const DOG_IDLE_FPS = 6;
+const DOG_IDLE_FPS = 4;
 const DOG_WAG_FPS = 8;
+const DOG_RUN_FPS = 10;
 const DOG_ANCHOR_X = 0.5;
 const DOG_ANCHOR_Y = 0.8;
 const NOISE_SCALE = 0.8; // Lower = larger patches
@@ -138,6 +140,11 @@ async function main() {
     data: { scaleMode: "nearest" },
   }) as Texture;
 
+  const dogRunSheet = await Assets.load({
+    src: DOG_RUN_SHEET_PATH,
+    data: { scaleMode: "nearest" },
+  }) as Texture;
+
   const dogColumns = Math.floor(dogSheet.width / DOG_FRAME_SIZE);
   const dogRows = Math.floor(dogSheet.height / DOG_FRAME_SIZE);
   if (dogColumns < 5 || dogRows < 8) {
@@ -150,6 +157,24 @@ async function main() {
     for (let col = 0; col < count; col += 1) {
       frames.push(new Texture({
         source: dogSheet.source,
+        frame: new Rectangle(col * DOG_FRAME_SIZE, rowIndex * DOG_FRAME_SIZE, DOG_FRAME_SIZE, DOG_FRAME_SIZE),
+      }));
+    }
+    return frames;
+  };
+
+  const runColumns = Math.floor(dogRunSheet.width / DOG_FRAME_SIZE);
+  const runRows = Math.floor(dogRunSheet.height / DOG_FRAME_SIZE);
+  if (runColumns < 4 || runRows < 7) {
+    throw new Error("Dog run sheet does not match expected 4x7 grid.");
+  }
+
+  const sliceRunRow = (rowIndex: number, frameCount: number): Texture[] => {
+    const frames: Texture[] = [];
+    const count = Math.min(frameCount, runColumns);
+    for (let col = 0; col < count; col += 1) {
+      frames.push(new Texture({
+        source: dogRunSheet.source,
         frame: new Rectangle(col * DOG_FRAME_SIZE, rowIndex * DOG_FRAME_SIZE, DOG_FRAME_SIZE, DOG_FRAME_SIZE),
       }));
     }
@@ -169,9 +194,32 @@ async function main() {
       back: sliceDogRow(5, 4),
       right: sliceDogRow(7, 4),
     },
+    run: {
+      in: {
+        front: sliceRunRow(0, 4),
+        left: sliceRunRow(2, 4),
+        back: sliceRunRow(4, 4),
+        right: sliceRunRow(5, 4),
+      },
+      out: {
+        front: sliceRunRow(1, 3),
+        left: sliceRunRow(3, 3),
+        back: sliceRunRow(4, 4),
+        right: sliceRunRow(6, 3),
+      },
+      fps: DOG_RUN_FPS,
+    },
+    ballOffset: {
+      front: { x: 0, y: -28 },
+      left: { x: -18, y: -26 },
+      right: { x: 18, y: -26 },
+      back: { x: 0, y: -30 },
+    },
     scale: DOG_SCALE,
     idleFps: DOG_IDLE_FPS,
     wagFps: DOG_WAG_FPS,
+    idleHoldFrameIndex: 2,
+    idleHoldMultiplier: 5,
     anchorX: DOG_ANCHOR_X,
     anchorY: DOG_ANCHOR_Y,
   };

@@ -5,6 +5,7 @@ import {
   Sprite,
   Player,
   DogAI,
+  DogState,
   Ball,
   BallState,
 } from "../components.ts";
@@ -20,12 +21,34 @@ interface DogAnimationFrames {
   back: Texture[];
 }
 
+interface Offset2D {
+  x: number;
+  y: number;
+}
+
+interface DogBallOffsetConfig {
+  front: Offset2D;
+  left: Offset2D;
+  right: Offset2D;
+  back: Offset2D;
+}
+
+interface DogRunConfig {
+  in: DogAnimationFrames;
+  out: DogAnimationFrames;
+  fps: number;
+}
+
 export interface DogSpriteConfig {
   idle: DogAnimationFrames;
   wag: DogAnimationFrames;
+  run: DogRunConfig;
+  ballOffset?: DogBallOffsetConfig;
   scale: number;
   idleFps: number;
   wagFps: number;
+  idleHoldFrameIndex: number;
+  idleHoldMultiplier: number;
   anchorX: number;
   anchorY: number;
 }
@@ -117,6 +140,35 @@ function getDogDirection(playerX: number, playerY: number, dogX: number, dogY: n
   return dy > 0 ? "front" : "back";
 }
 
+function getHeldFrameIndex(
+  now: number,
+  fps: number,
+  frameCount: number,
+  holdIndex: number,
+  holdMultiplier: number
+): number {
+  const safeMultiplier = Math.max(1, holdMultiplier);
+  const baseDuration = 1 / fps;
+  let totalDuration = baseDuration * frameCount;
+
+  if (holdIndex >= 0 && holdIndex < frameCount && safeMultiplier > 1) {
+    totalDuration += baseDuration * (safeMultiplier - 1);
+  }
+
+  const localTime = now % totalDuration;
+  let accumulated = 0;
+
+  for (let i = 0; i < frameCount; i += 1) {
+    const duration = baseDuration * (i === holdIndex ? safeMultiplier : 1);
+    accumulated += duration;
+    if (localTime < accumulated) {
+      return i;
+    }
+  }
+
+  return frameCount - 1;
+}
+
 function renderDog(world: World): void {
   if (!ctx) return;
 
@@ -139,6 +191,16 @@ function renderDog(world: World): void {
       hasPlayer = true;
       break;
     }
+    let ballX = 0;
+    let ballY = 0;
+    let hasBall = false;
+    const balls = query(world, [Position, Ball]);
+    for (const eid of balls) {
+      ballX = Position.x[eid]!;
+      ballY = Position.y[eid]!;
+      hasBall = true;
+      break;
+    }
 
     for (const eid of dogs) {
       active.add(eid);
@@ -154,10 +216,35 @@ function renderDog(world: World): void {
       const dogX = Position.x[eid]!;
       const dogY = Position.y[eid]!;
       const excited = DogAI.excited[eid]!;
-      const direction = hasPlayer ? getDogDirection(playerX, playerY, dogX, dogY) : "front";
-      const frames = excited ? config.wag[direction] : config.idle[direction];
-      const fps = excited ? config.wagFps : config.idleFps;
-      const frameIndex = frames.length > 1 ? Math.floor(now * fps) % frames.length : 0;
+      const state = DogAI.state[eid]!;
+      let direction: DogDirection = "front";
+      if (state === DogState.Idle || state === DogState.ReturningToPlayer) {
+        if (hasPlayer) {
+          direction = getDogDirection(playerX, playerY, dogX, dogY);
+        }
+      } else if (hasBall) {
+        direction = getDogDirection(ballX, ballY, dogX, dogY);
+      } else if (hasPlayer) {
+        direction = getDogDirection(playerX, playerY, dogX, dogY);
+      }
+      let frames: Texture[] = [];
+      let fps = config.idleFps;
+      let frameIndex = 0;
+
+      if (state !== DogState.Idle) {
+        const runFrames = state === DogState.ChasingBall ? config.run.out : config.run.in;
+        frames = runFrames[direction];
+        fps = config.run.fps;
+        frameIndex = frames.length > 1 ? Math.floor(now * fps) % frames.length : 0;
+      } else {
+        frames = excited ? config.wag[direction] : config.idle[direction];
+        fps = excited ? config.wagFps : config.idleFps;
+        if (frames.length > 1) {
+          frameIndex = excited
+            ? Math.floor(now * fps) % frames.length
+            : getHeldFrameIndex(now, fps, frames.length, config.idleHoldFrameIndex, config.idleHoldMultiplier);
+        }
+      }
 
       sprite.texture = frames[frameIndex] ?? sprite.texture;
       sprite.x = dogX;
@@ -231,12 +318,33 @@ function renderBall(world: World): void {
 
   g.clear();
 
+  let playerX = 0;
+  let playerY = 0;
+  let hasPlayer = false;
+  const players = query(world, [Position, Player]);
+  for (const eid of players) {
+    playerX = Position.x[eid]!;
+    playerY = Position.y[eid]!;
+    hasPlayer = true;
+    break;
+  }
+
   for (const eid of balls) {
-    const x = Position.x[eid]!;
-    const y = Position.y[eid]!;
+    let x = Position.x[eid]!;
+    let y = Position.y[eid]!;
     const color = Sprite.color[eid]!;
     const radius = Sprite.radius[eid]!;
     const state = Ball.state[eid]!;
+    const holder = Ball.heldBy[eid]!;
+
+    if (state === BallState.HeldByDog && ctx?.dogConfig?.ballOffset && holder) {
+      const dogX = Position.x[holder]!;
+      const dogY = Position.y[holder]!;
+      const direction = hasPlayer ? getDogDirection(playerX, playerY, dogX, dogY) : "front";
+      const offset = ctx.dogConfig.ballOffset[direction];
+      x = dogX + offset.x;
+      y = dogY + offset.y;
+    }
 
     // Ball shadow (when in flight)
     if (state === BallState.InFlight) {

@@ -41,6 +41,13 @@ const TILE_SCALE = 2;
 const DEBUG_SHEET_MAX_SCALE = 2;
 const DEFAULT_TILE_INDEX = 58;
 const NONE_TILE_INDEX = -1;
+const DOG_SHEET_PATH = "/sprites/dog/WHITE_DOG_STANDING.png";
+const DOG_FRAME_SIZE = 32;
+const DOG_SCALE = 3;
+const DOG_IDLE_FPS = 6;
+const DOG_WAG_FPS = 8;
+const DOG_ANCHOR_X = 0.5;
+const DOG_ANCHOR_Y = 0.8;
 const NOISE_SCALE = 0.8; // Lower = larger patches
 const NOISE_COVERAGE = 0.45; // Approx fraction of tiles to show
 const NOISE_OCTAVES = 5;
@@ -125,6 +132,49 @@ async function main() {
     src: TILE_SHEET_PATH,
     data: { scaleMode: "nearest" },
   }) as Texture;
+
+  const dogSheet = await Assets.load({
+    src: DOG_SHEET_PATH,
+    data: { scaleMode: "nearest" },
+  }) as Texture;
+
+  const dogColumns = Math.floor(dogSheet.width / DOG_FRAME_SIZE);
+  const dogRows = Math.floor(dogSheet.height / DOG_FRAME_SIZE);
+  if (dogColumns < 5 || dogRows < 8) {
+    throw new Error("Dog sheet does not match expected 5x8 grid.");
+  }
+
+  const sliceDogRow = (rowIndex: number, frameCount: number): Texture[] => {
+    const frames: Texture[] = [];
+    const count = Math.min(frameCount, dogColumns);
+    for (let col = 0; col < count; col += 1) {
+      frames.push(new Texture({
+        source: dogSheet.source,
+        frame: new Rectangle(col * DOG_FRAME_SIZE, rowIndex * DOG_FRAME_SIZE, DOG_FRAME_SIZE, DOG_FRAME_SIZE),
+      }));
+    }
+    return frames;
+  };
+
+  const dogSpriteConfig = {
+    idle: {
+      front: sliceDogRow(0, 5),
+      left: sliceDogRow(2, 5),
+      back: sliceDogRow(4, 1),
+      right: sliceDogRow(6, 5),
+    },
+    wag: {
+      front: sliceDogRow(1, 4),
+      left: sliceDogRow(3, 4),
+      back: sliceDogRow(5, 4),
+      right: sliceDogRow(7, 4),
+    },
+    scale: DOG_SCALE,
+    idleFps: DOG_IDLE_FPS,
+    wagFps: DOG_WAG_FPS,
+    anchorX: DOG_ANCHOR_X,
+    anchorY: DOG_ANCHOR_Y,
+  };
 
   const tileColumns = Math.max(1, Math.floor(grassSheet.width / TILE_SIZE));
   const tileRows = Math.max(1, Math.floor(grassSheet.height / TILE_SIZE));
@@ -308,7 +358,7 @@ async function main() {
   const world = createWorld();
 
   // Initialize render system
-  initRenderSystem(app.stage);
+  initRenderSystem(app.stage, { dog: dogSpriteConfig });
 
   // Spawn entities
   const playerEid = createPlayer(world, WIDTH / 2, HEIGHT / 2);

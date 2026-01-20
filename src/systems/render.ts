@@ -1,5 +1,5 @@
 import { query } from "bitecs";
-import { Graphics, Container } from "pixi.js";
+import { Graphics, Container, Sprite as PixiSprite, Texture } from "pixi.js";
 import {
   Position,
   Sprite,
@@ -11,34 +11,64 @@ import {
 import { getChargeState } from "./throw.ts";
 import type { World } from "../types.ts";
 
+type DogDirection = "front" | "left" | "right" | "back";
+
+interface DogAnimationFrames {
+  front: Texture[];
+  left: Texture[];
+  right: Texture[];
+  back: Texture[];
+}
+
+export interface DogSpriteConfig {
+  idle: DogAnimationFrames;
+  wag: DogAnimationFrames;
+  scale: number;
+  idleFps: number;
+  wagFps: number;
+  anchorX: number;
+  anchorY: number;
+}
+
 // Render context - holds Pixi objects
 interface RenderContext {
   container: Container;
   playerGraphics: Graphics;
-  dogGraphics: Graphics;
   ballGraphics: Graphics;
   aimIndicator: Graphics;
+  dogGraphics?: Graphics;
+  dogContainer?: Container;
+  dogSprites: Map<number, PixiSprite>;
+  dogConfig?: DogSpriteConfig;
 }
 
 let ctx: RenderContext | null = null;
 
-export function initRenderSystem(container: Container): void {
+export function initRenderSystem(container: Container, options?: { dog?: DogSpriteConfig }): void {
   const playerGraphics = new Graphics();
-  const dogGraphics = new Graphics();
   const ballGraphics = new Graphics();
   const aimIndicator = new Graphics();
+  const dogGraphics = new Graphics();
+  const dogContainer = new Container();
 
   container.addChild(aimIndicator); // Behind everything
   container.addChild(playerGraphics);
-  container.addChild(dogGraphics);
+  if (options?.dog) {
+    container.addChild(dogContainer);
+  } else {
+    container.addChild(dogGraphics);
+  }
   container.addChild(ballGraphics);
 
   ctx = {
     container,
     playerGraphics,
-    dogGraphics,
     ballGraphics,
     aimIndicator,
+    dogGraphics,
+    dogContainer,
+    dogSprites: new Map(),
+    dogConfig: options?.dog,
   };
 }
 
@@ -76,9 +106,77 @@ function renderPlayer(world: World): void {
   }
 }
 
+function getDogDirection(playerX: number, playerY: number, dogX: number, dogY: number): DogDirection {
+  const dx = playerX - dogX;
+  const dy = playerY - dogY;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? "right" : "left";
+  }
+
+  return dy > 0 ? "front" : "back";
+}
+
 function renderDog(world: World): void {
+  if (!ctx) return;
+
   const dogs = query(world, [Position, DogAI, Sprite]);
-  const g = ctx!.dogGraphics;
+
+  if (ctx.dogConfig) {
+    const config = ctx.dogConfig;
+    const dogContainer = ctx.dogContainer!;
+    const dogSprites = ctx.dogSprites;
+    const active = new Set<number>();
+    const now = performance.now() / 1000;
+
+    let playerX = 0;
+    let playerY = 0;
+    let hasPlayer = false;
+    const players = query(world, [Position, Player]);
+    for (const eid of players) {
+      playerX = Position.x[eid]!;
+      playerY = Position.y[eid]!;
+      hasPlayer = true;
+      break;
+    }
+
+    for (const eid of dogs) {
+      active.add(eid);
+      let sprite = dogSprites.get(eid);
+      if (!sprite) {
+        sprite = new PixiSprite(config.idle.front[0] ?? Texture.EMPTY);
+        sprite.anchor.set(config.anchorX, config.anchorY);
+        sprite.scale.set(config.scale);
+        dogContainer.addChild(sprite);
+        dogSprites.set(eid, sprite);
+      }
+
+      const dogX = Position.x[eid]!;
+      const dogY = Position.y[eid]!;
+      const excited = DogAI.excited[eid]!;
+      const direction = hasPlayer ? getDogDirection(playerX, playerY, dogX, dogY) : "front";
+      const frames = excited ? config.wag[direction] : config.idle[direction];
+      const fps = excited ? config.wagFps : config.idleFps;
+      const frameIndex = frames.length > 1 ? Math.floor(now * fps) % frames.length : 0;
+
+      sprite.texture = frames[frameIndex] ?? sprite.texture;
+      sprite.x = dogX;
+      sprite.y = dogY;
+      sprite.visible = true;
+    }
+
+    for (const [eid, sprite] of dogSprites) {
+      if (!active.has(eid)) {
+        sprite.destroy();
+        dogSprites.delete(eid);
+      }
+    }
+
+    return;
+  }
+
+  const g = ctx.dogGraphics;
+  if (!g) return;
 
   g.clear();
 

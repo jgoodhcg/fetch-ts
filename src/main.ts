@@ -50,6 +50,7 @@ const DOG_WAG_FPS = 8;
 const DOG_RUN_FPS = 10;
 const DOG_ANCHOR_X = 0.5;
 const DOG_ANCHOR_Y = 0.8;
+const BALL_OFFSET_GRID_SIZE = 8;
 const NOISE_SCALE = 0.8; // Lower = larger patches
 const NOISE_COVERAGE = 0.45; // Approx fraction of tiles to show
 const NOISE_OCTAVES = 5;
@@ -210,10 +211,10 @@ async function main() {
       fps: DOG_RUN_FPS,
     },
     ballOffset: {
-      front: { x: 0, y: -28 },
-      left: { x: -18, y: -26 },
-      right: { x: 18, y: -26 },
-      back: { x: 0, y: -30 },
+      front: { x: 0, y: -18 },
+      left: { x: -22, y: -20 },
+      right: { x: 22, y: -20 },
+      back: null,
     },
     scale: DOG_SCALE,
     idleFps: DOG_IDLE_FPS,
@@ -411,7 +412,7 @@ async function main() {
   // Spawn entities
   const playerEid = createPlayer(world, WIDTH / 2, HEIGHT / 2);
   createDog(world, WIDTH / 2 - 100, HEIGHT / 2 + 50);
-  createBall(world, playerEid);
+  const ballEid = createBall(world, playerEid);
 
   // Instructions text
   const instructionsText = new Text({
@@ -481,6 +482,84 @@ async function main() {
     debugOverlay.addChild(highlight);
     debugOverlay.addChild(debugText);
     app.stage.addChild(debugOverlay);
+  }
+
+  if (isDev) {
+    const previewScale = dogSpriteConfig.scale;
+    const panelWidth = DOG_FRAME_SIZE * previewScale;
+    const panelHeight = DOG_FRAME_SIZE * previewScale;
+    const panelGap = 12;
+    const overlayWidth = panelWidth * 2 + panelGap;
+    const overlay = new Container();
+    overlay.x = WIDTH - overlayWidth - 10;
+    overlay.y = 40;
+
+    const ballRadius = Sprite.radius[ballEid] ?? 10;
+
+    const directions: Array<keyof typeof dogSpriteConfig.idle> = ["front", "left", "back", "right"];
+
+    directions.forEach((direction, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const panelX = col * (panelWidth + panelGap);
+      const panelY = row * (panelHeight + 26);
+
+      const panel = new Container();
+      panel.x = panelX;
+      panel.y = panelY;
+
+      const grid = new Graphics();
+      const gridSize = BALL_OFFSET_GRID_SIZE * previewScale;
+      for (let x = 0; x <= panelWidth; x += gridSize) {
+        grid.moveTo(x, 0);
+        grid.lineTo(x, panelHeight);
+      }
+      for (let y = 0; y <= panelHeight; y += gridSize) {
+        grid.moveTo(0, y);
+        grid.lineTo(panelWidth, y);
+      }
+      grid.stroke({ width: 1, color: 0xffffff, alpha: 0.15 });
+      panel.addChild(grid);
+
+      const anchorX = panelWidth * dogSpriteConfig.anchorX;
+      const anchorY = panelHeight * dogSpriteConfig.anchorY;
+      const cross = new Graphics();
+      cross.moveTo(anchorX - 6, anchorY);
+      cross.lineTo(anchorX + 6, anchorY);
+      cross.moveTo(anchorX, anchorY - 6);
+      cross.lineTo(anchorX, anchorY + 6);
+      cross.stroke({ width: 1, color: 0xffd24a, alpha: 0.9 });
+      panel.addChild(cross);
+
+      const previewFrame = dogSpriteConfig.run.in[direction][0]
+        ?? dogSpriteConfig.idle[direction][0]
+        ?? Texture.EMPTY;
+      const previewDog = new PixiSprite(previewFrame);
+      previewDog.anchor.set(dogSpriteConfig.anchorX, dogSpriteConfig.anchorY);
+      previewDog.scale.set(previewScale);
+      previewDog.x = anchorX;
+      previewDog.y = anchorY;
+      panel.addChild(previewDog);
+
+      const offset = dogSpriteConfig.ballOffset?.[direction] ?? null;
+      if (offset) {
+        const previewBall = new Graphics();
+        previewBall.circle(anchorX + offset.x, anchorY + offset.y, ballRadius);
+        previewBall.fill({ color: BALL_COLOR, alpha: 0.9 });
+        panel.addChild(previewBall);
+      }
+
+      const label = new Text({
+        text: offset ? `${direction} (${offset.x}, ${offset.y})` : `${direction} (hidden)`,
+        style: { fontSize: 12, fill: 0xffffff },
+      });
+      label.y = panelHeight + 4;
+      panel.addChild(label);
+
+      overlay.addChild(panel);
+    });
+
+    app.stage.addChild(overlay);
   }
 
   const updateDebugOverlay = (): void => {

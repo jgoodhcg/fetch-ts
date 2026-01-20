@@ -27,10 +27,10 @@ interface Offset2D {
 }
 
 interface DogBallOffsetConfig {
-  front: Offset2D;
-  left: Offset2D;
-  right: Offset2D;
-  back: Offset2D;
+  front: Offset2D | null;
+  left: Offset2D | null;
+  right: Offset2D | null;
+  back: Offset2D | null;
 }
 
 interface DogRunConfig {
@@ -342,6 +342,9 @@ function renderBall(world: World): void {
       const dogY = Position.y[holder]!;
       const direction = hasPlayer ? getDogDirection(playerX, playerY, dogX, dogY) : "front";
       const offset = ctx.dogConfig.ballOffset[direction];
+      if (!offset) {
+        continue;
+      }
       x = dogX + offset.x;
       y = dogY + offset.y;
     }
